@@ -1,0 +1,60 @@
+---
+- name : Installing httpd package
+  hosts : PROD
+  become : yes
+  tasks :
+  - name : Install httpd
+    ansible.builtin.yum:
+     name : "{{item.name}}"
+     state : "{{item.state}}"
+    loop :
+        - { name : 'httpd', state : 'latest' }
+        - { name : 'gcc', state : 'latest' }
+        - { name : 'httpd-devel', state : 'latest' }
+        
+  - name : starting httpd service
+    ansible.builtin.service:
+      name : httpd
+      state : started
+
+  - name : dowanloading TOMCAT
+    ansible.builtin.get_url:
+      url : https://dlcdn.apache.org/tomcat/tomcat-connectors/jk/tomcat-connectors-1.2.49-src.tar.gz
+      dest : /opt/
+
+  - name : Extrating TOMCAT package
+    ansible.builtin.unarchive:
+     src : /opt/tomcat-connectors-1.2.49-src.tar.gz
+     dest : /opt
+     remote_src: yes
+
+  - name: This command will change the working directory to somedir/
+    ansible.builtin.shell: "{{item}}"
+    args :
+      chdir: /opt/tomcat-connectors-1.2.49-src/native
+    loop :
+      - ./configure --with-apxs=/bin/apxs
+      - make 
+      - make install 
+  - name : copy using inline content
+    ansible.builtin.copy:
+     content : 'LoadModule jk_modules/mod_jk.so
+              Jkworkersfile conf/workers.properties
+              JkLogFile logs/mod_jk.log
+              JkLogLevel info
+              JkLogLevel debug
+              JkLogLevel warn
+              JkLogStampFormat  "[%a %b %d %H: %M: %S %Y]"
+              JkMount  /app tomcatA
+              JkMount  /app/* tomcatA'
+     dest : /etc/httpd/conf.d/modjk.conf
+
+  - name : update 
+    ansible.builtin.blockinfile:
+     path : /etc/httpd/conf.d/worker.properties
+     block: | 
+            worker.list=tomcatA
+            worker.tomcatA.type=ajp13
+            worker.tomcatA.port=8009
+            worker.tomcatA.host=localhost
+     create : yes 
